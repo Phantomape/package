@@ -17,7 +17,9 @@ class Package:
     """
 
     def __init__(self, name: str, num_months, monthly_base: float, stocks_price: float, stocks_value: float,
-                 sign_on_bonus: float,
+                 sign_on_bonus: float, monthly_bonus: float, individual_insurance_ratio: float,
+                 company_insurance_ratio: float,
+                 housing_provident_ratio: float, supplement_housing_provident_ratio: float,
                  stocks_cliff: int, num_workdays: int, daily_working_hours: int, pto: int, pto_growth: int):
         # 公司
         self.name = name
@@ -25,6 +27,10 @@ class Package:
         # 现金部分
         self.num_months = num_months
         self.monthly_base = monthly_base
+
+        # 加班费
+        self.monthly_bonus = monthly_bonus
+        # 签字费
         self.sign_on_bonus = sign_on_bonus
 
         # 股票相关
@@ -39,6 +45,14 @@ class Package:
         self.pto = pto
         self.pto_growth = pto_growth
 
+        # 社保
+        self.individual_insurance_ratio = individual_insurance_ratio
+        self.company_insurance_ratio = company_insurance_ratio
+
+        # 公积金
+        self.housing_provident_ratio = housing_provident_ratio
+        self.supplement_housing_provident_ratio = supplement_housing_provident_ratio
+
     def get_stocks_gain(self, year: int) -> float:
         """
         股票怎么打税，不懂呀 -.-
@@ -48,7 +62,19 @@ class Package:
         if year < self.stocks_cliff:
             return 0
 
-        return self.stocks_num_shares * self.stocks_price
+        return self.stocks_num_shares * self.stocks_price * 0.8
+
+    def get_total_housing_provident(self) -> float:
+        """
+        计算公积金
+        """
+        return self.get_housing_provident() + self.get_supplement_housing_provident()
+
+    def get_housing_provident(self, max_housing_provident=3922.0):
+        return min(max_housing_provident, self.monthly_base * self.housing_provident_ratio * 2)
+
+    def get_supplement_housing_provident(self, max_sup_housing_provident=2802.0):
+        return min(max_sup_housing_provident, self.monthly_base * self.supplement_housing_provident_ratio * 2)
 
     def get_hourly_salary(self, yearly_salary: float, year: int) -> float:
         # 一年52周, 每年11个法定节假日
@@ -56,7 +82,7 @@ class Package:
                 self.pto_growth * year)) * self.daily_working_hours
         return yearly_salary / total_working_hours
 
-    def get_monthly_salary_list(self, default_salary: float, bonus: list, insurance: float) -> list:
+    def get_monthly_salary_list(self, default_salary: float, bonus: list) -> list:
         """计算每个月到手工资
 
         Arguments:
@@ -74,7 +100,8 @@ class Package:
         for i in bonus:
             # 当月预扣缴额(每月的应缴税 = 基本工资 + 浮动奖金(绩效工资) - 起征点 - 专项扣除 - 五险一金)
             should_tax = default_salary + i - starting_point - \
-                         special - default_salary * insurance
+                         special - self.get_total_housing_provident() - min(self.monthly_base,
+                                                                            28017.0) * self.individual_insurance_ratio
             total_need_tax += should_tax
             # 税率区间
             index = self.get_index_from_sections(total_need_tax)
@@ -83,7 +110,8 @@ class Package:
             # 当月应缴税(当月累计应缴税 - 上月累计应缴税(累计已缴税))
             cur_tax = total_tax - total_had_tax
             # 当月工资(当月工资=基本工资 + 浮动奖金(绩效工资) - 当月应缴税 - 五险一金)
-            cur_sal = default_salary + i - cur_tax - default_salary * insurance
+            cur_sal = default_salary + i - cur_tax - self.get_total_housing_provident() - min(self.monthly_base,
+                                                                                              28017.0) * self.individual_insurance_ratio
             salary_list.append(cur_sal)
             total_had_tax = total_tax
         return salary_list
@@ -114,7 +142,7 @@ class Package:
     def package_stats(self):
         print("-------- {} --------".format(self.name))
         for year in range(1, 4):
-            salary_list = self.get_monthly_salary_list(self.monthly_base, [0] * 12, 0.175)
+            salary_list = self.get_monthly_salary_list(self.monthly_base, [self.monthly_bonus] * 12)
             accumulated_salary = 0
             for s in salary_list:
                 accumulated_salary += s
@@ -126,9 +154,13 @@ class Package:
             stocks_gain = self.get_stocks_gain(year)
             print("\t第{}年的股票收益为{}".format(year, stocks_gain))
 
-            net_package = accumulated_salary + bonus + stocks_gain
+            social_insurance = self.get_total_housing_provident() * 12
+            print("\t第{}年的公积金为{}".format(year, social_insurance))
+
+            net_package = accumulated_salary + bonus + stocks_gain + social_insurance
             print("\t第{}年的税后总共为{}".format(year, net_package))
 
             hourly_salary = self.get_hourly_salary(net_package, year)
             print("\t第{}年的时薪为{}".format(year, hourly_salary))
+
             print()
