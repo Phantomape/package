@@ -16,13 +16,18 @@ class Package:
     用来描述一个offer的package情况
     """
 
-    def __init__(self, name: str, num_months, monthly_base: float, stocks_price: float, stocks_value: float,
+    def __init__(self, name: str, num_months, monthly_base: float,
                  sign_on_bonus: float, monthly_bonus: float, individual_insurance_ratio: float,
-                 company_insurance_ratio: float,
+                 company_insurance_ratio: float, avg_monthly_salary: float,
+                 options_price: float, options_num_shares: float, options_ratio: list,
                  housing_provident_ratio: float, supplement_housing_provident_ratio: float,
-                 stocks_cliff: int, num_workdays: int, daily_working_hours: int, pto: int, pto_growth: int):
+                 stocks_price: float, stocks_value: float,
+                 num_workdays: float, daily_working_hours: int, pto: int, pto_growth: int):
         # 公司
         self.name = name
+
+        # 当地平均工资, 社保缴费基数上限为3倍当地平均工资
+        self.avg_monthly_salary = avg_monthly_salary
 
         # 现金部分
         self.num_months = num_months
@@ -30,14 +35,21 @@ class Package:
 
         # 加班费
         self.monthly_bonus = monthly_bonus
-        # 签字费
+
+        # 签字费，目前不参与总包计算，只是做个样子
         self.sign_on_bonus = sign_on_bonus
 
         # 股票相关
         self.stocks_value = stocks_value
         self.stocks_price = stocks_price
         self.stocks_num_shares = 0 if stocks_value == 0 else stocks_value / stocks_price
-        self.stocks_cliff = stocks_cliff
+
+        # 期权相关
+        self.options_price = options_price
+        self.options_num_shares = options_num_shares
+
+        # 其实想描述每一年期权解禁的比例，没有想到合适的词
+        self.options_ratio = options_ratio
 
         # 工作时间
         self.num_workdays = num_workdays
@@ -49,20 +61,34 @@ class Package:
         self.individual_insurance_ratio = individual_insurance_ratio
         self.company_insurance_ratio = company_insurance_ratio
 
-        # 公积金
+        # 公积金缴纳比例
         self.housing_provident_ratio = housing_provident_ratio
         self.supplement_housing_provident_ratio = supplement_housing_provident_ratio
 
-    def get_stocks_gain(self, year: int) -> float:
+        # 公积金缴纳上限由当地平均工资决定，并且最后四舍五入
+        self.max_housing_provident = float(round(self.avg_monthly_salary * 3 * self.housing_provident_ratio * 2))
+        self.max_sup_housing_provident = float(
+            round(self.avg_monthly_salary * 3 * self.supplement_housing_provident_ratio * 2))
+
+    def get_options_gain(self, year: int) -> float:
         """
-        股票怎么打税，不懂呀 -.-
+        期权算收益只能拿回购价格 * 比例系数 - 行权价格来算，真的很难算，还是按照股票那样随便算一下先 -.-
         :param year: 工作年限
         :return:
         """
-        if year < self.stocks_cliff:
-            return 0
+        year_idx = year - 1
+        if year_idx >= len(self.options_ratio):
+            raise Exception("options_ratio has smaller number of length compared with year")
 
-        return self.stocks_num_shares * self.stocks_price * 0.8
+        return self.options_num_shares * self.options_ratio[year_idx] * self.options_price
+
+    def get_stocks_gain(self, year: int) -> float:
+        """
+        股票怎么打税，不懂呀，这里随便实现一下 -.-
+        :param year: 工作年限
+        :return:
+        """
+        return self.stocks_value * 0.8
 
     def get_total_housing_provident(self) -> float:
         """
@@ -70,11 +96,19 @@ class Package:
         """
         return self.get_housing_provident() + self.get_supplement_housing_provident()
 
-    def get_housing_provident(self, max_housing_provident=3922.0):
-        return min(max_housing_provident, self.monthly_base * self.housing_provident_ratio * 2)
+    def get_housing_provident(self):
+        """
+        计算住房公积金
+        :return:
+        """
+        return min(self.max_housing_provident, self.monthly_base * self.housing_provident_ratio * 2)
 
-    def get_supplement_housing_provident(self, max_sup_housing_provident=2802.0):
-        return min(max_sup_housing_provident, self.monthly_base * self.supplement_housing_provident_ratio * 2)
+    def get_supplement_housing_provident(self):
+        """
+        计算补充公积金
+        :return:
+        """
+        return min(self.max_sup_housing_provident, self.monthly_base * self.supplement_housing_provident_ratio * 2)
 
     def get_hourly_salary(self, yearly_salary: float, year: int) -> float:
         # 一年52周, 每年11个法定节假日
@@ -100,8 +134,8 @@ class Package:
         for i in bonus:
             # 当月预扣缴额(每月的应缴税 = 基本工资 + 浮动奖金(绩效工资) - 起征点 - 专项扣除 - 五险一金)
             should_tax = default_salary + i - starting_point - \
-                         special - self.get_total_housing_provident() - min(self.monthly_base,
-                                                                            28017.0) * self.individual_insurance_ratio
+                         special - self.get_total_housing_provident() - \
+                         min(self.monthly_base, self.avg_monthly_salary * 3) * self.individual_insurance_ratio
             total_need_tax += should_tax
             # 税率区间
             index = self.get_index_from_sections(total_need_tax)
@@ -110,8 +144,8 @@ class Package:
             # 当月应缴税(当月累计应缴税 - 上月累计应缴税(累计已缴税))
             cur_tax = total_tax - total_had_tax
             # 当月工资(当月工资=基本工资 + 浮动奖金(绩效工资) - 当月应缴税 - 五险一金)
-            cur_sal = default_salary + i - cur_tax - self.get_total_housing_provident() - min(self.monthly_base,
-                                                                                              28017.0) * self.individual_insurance_ratio
+            cur_sal = default_salary + i - cur_tax - self.get_total_housing_provident() - \
+                      min(self.monthly_base, self.avg_monthly_salary * 3) * self.individual_insurance_ratio
             salary_list.append(cur_sal)
             total_had_tax = total_tax
         return salary_list
@@ -154,10 +188,13 @@ class Package:
             stocks_gain = self.get_stocks_gain(year)
             print("\t第{}年的股票收益为{}".format(year, stocks_gain))
 
+            options_gain = self.get_options_gain(year)
+            print("\t第{}年的期权收益为{}".format(year, options_gain))
+
             social_insurance = self.get_total_housing_provident() * 12
             print("\t第{}年的公积金为{}".format(year, social_insurance))
 
-            net_package = accumulated_salary + bonus + stocks_gain + social_insurance
+            net_package = accumulated_salary + bonus + stocks_gain + social_insurance + options_gain
             print("\t第{}年的税后总共为{}".format(year, net_package))
 
             hourly_salary = self.get_hourly_salary(net_package, year)
