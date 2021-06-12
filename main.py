@@ -5,7 +5,7 @@ from package import Package
 
 def examples():
     # 小王在上海腾讯一年16薪，每月工资3.75W，每月加班费用为0，3万的签字费
-    # 股价入职时候为80美元，美元人民币汇率按6.5来算，每年15万的股票
+    # 股价入职时候为80美元，美元人民币汇率按6.5来算，每年15万的股票，股票每年涨幅10%，股票解禁比例为33%，33%，34%
     # 5天工作，每天工作10小时，7天年假，每年年假 +1
     # 上海的平均工资为9339元， 这个数字明年7月都要更新一次
     # 上海的个人五险一金比例为10.5%（养老保险 8%，医疗保险 2%，失业保险0.5%）
@@ -17,7 +17,8 @@ def examples():
             pto=7, pto_growth=1, avg_monthly_salary=9339.0,
             individual_insurance_ratio=0.105, company_insurance_ratio=0.28,
             housing_provident_ratio=0.07, supplement_housing_provident_ratio=0.05,
-            options_price=0, options_ratio=[0] * 12, options_num_shares=0) \
+            options_price=0, options_ratio=[0] * 12, options_num_shares=0, stocks_growth_ratio=0.1,
+            stocks_ratio=[0.33, 0.33, 0.34]) \
         .package_stats()
 
     # 小吴在上海头条一年15薪，每月工资4.5W，每月加班费用为8200
@@ -33,7 +34,8 @@ def examples():
             num_workdays=5.5, daily_working_hours=12,
             pto=7, pto_growth=1, avg_monthly_salary=9339.0,
             individual_insurance_ratio=0.105, company_insurance_ratio=0.28,
-            housing_provident_ratio=0.07, supplement_housing_provident_ratio=0.05) \
+            housing_provident_ratio=0.07, supplement_housing_provident_ratio=0.05, stocks_growth_ratio=0,
+            stocks_ratio=[0] * 12) \
         .package_stats()
 
 

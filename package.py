@@ -21,7 +21,7 @@ class Package:
                  company_insurance_ratio: float, avg_monthly_salary: float,
                  options_price: float, options_num_shares: float, options_ratio: list,
                  housing_provident_ratio: float, supplement_housing_provident_ratio: float,
-                 stocks_price: float, stocks_value: float,
+                 stocks_price: float, stocks_value: float, stocks_growth_ratio: float, stocks_ratio: list,
                  num_workdays: float, daily_working_hours: int, pto: int, pto_growth: int):
         # 公司
         self.name = name
@@ -39,10 +39,24 @@ class Package:
         # 签字费，目前不参与总包计算，只是做个样子
         self.sign_on_bonus = sign_on_bonus
 
-        # 股票相关
+        # 每年股票总额
         self.stocks_value = stocks_value
+
+        # 股票授予日价格
         self.stocks_price = stocks_price
-        self.stocks_num_shares = 0 if stocks_value == 0 else stocks_value / stocks_price
+
+        # 股票每年增幅比例, 这个变量名字有待商榷
+        self.stocks_growth_ratio = stocks_growth_ratio
+
+        # 每一年股票解禁的比例以及股数，一般都会报一个总价然后分多少年授予，因此每年授予的比例就放在stock_ratio里面，然后计算一下总的股数以及
+        # 后续每一年的股数，这里就统一向上取整数，后续建议改成直接赋值为股票数目填进来，能省很多奇怪的取整逻辑
+        self.stocks_ratio = stocks_ratio
+        self.stocks_num_shares_yearly = list()
+        for ratio in self.stocks_ratio:
+            if ratio == 0.0:
+                self.stocks_num_shares_yearly.append(0)
+            else:
+                self.stocks_num_shares_yearly.append(stocks_value / stocks_price)
 
         # 期权相关
         self.options_price = options_price
@@ -84,11 +98,37 @@ class Package:
 
     def get_stocks_gain(self, year: int) -> float:
         """
-        股票怎么打税，不懂呀，这里随便实现一下 -.-
+        根据个人所得税法计算，来源：https://www.shui5.cn/article/97/134633.html，这里只计算RSU，而且统一设置取得RSU时候所要支付的那
+        笔钱，以10000代替，具体参考上面网址里面的例子
         :param year: 工作年限
         :return:
         """
-        return self.stocks_value * 0.8
+        year_idx = year - 1
+        if year_idx >= len(self.stocks_num_shares_yearly):
+            raise Exception("stocks_num_shares_yearly has smaller number of length compared with year")
+
+        # 该一年授予的股票数目
+        num_shares_granted = self.stocks_num_shares_yearly[year_idx]
+        if num_shares_granted == 0:
+            return 0.0
+
+        # 该一年行权股票价格
+        price_per_share = self.stocks_price * (1.0 + self.stocks_growth_ratio) ** year
+
+        # 股票期权形式的工资薪金应纳税所得额
+        total_stocks_num_shares = 0
+        for shares in self.stocks_num_shares_yearly:
+            total_stocks_num_shares += shares
+        total_need_tax = (price_per_share + self.stocks_price) / 2.0 * num_shares_granted - 10000.0 * (
+                    num_shares_granted / total_stocks_num_shares)
+        if price_per_share <= self.stocks_price:
+            total_need_tax = 0
+
+        # 累计应缴税额(累计应缴税额 * 税率 - 速算扣除数) 速算扣除数*12相当于一年
+        index = self.get_index_from_sections(total_need_tax)
+        total_tax = total_need_tax * rates[index] - deductions[index] * 12
+
+        return price_per_share * num_shares_granted - total_tax
 
     def get_total_housing_provident(self) -> float:
         """
